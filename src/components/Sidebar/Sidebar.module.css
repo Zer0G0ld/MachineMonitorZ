@@ -1,0 +1,17 @@
+.sidebar {
+  width: 220px;
+  background-color: #111827;
+  padding: 16px;
+  border-right: 1px solid #2d3748;
+}
+
+.menuItem {
+  padding: 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.menuItem:hover {
+  background-color: #1f2937;
+}

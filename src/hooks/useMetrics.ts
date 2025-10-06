@@ -18,10 +18,10 @@ export const useMetrics = (pollInterval = 3000) => {
       const res = await fetch("http://127.0.0.1:17820/metrics");
       const data = await res.json();
       setMetrics(data);
-      setLoading(false);
       setError(null);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
       setLoading(false);
     }
   };
@@ -30,7 +30,7 @@ export const useMetrics = (pollInterval = 3000) => {
     fetchMetrics();
     const interval = setInterval(fetchMetrics, pollInterval);
     return () => clearInterval(interval);
-  }, []);
+  }, [pollInterval]);
 
   return { metrics, loading, error };
 };
