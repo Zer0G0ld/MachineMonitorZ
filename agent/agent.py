@@ -14,12 +14,13 @@ Instalação:
 import os
 import sys
 import time
-import json
 import threading
 import platform
+import ctypes
 import subprocess
+import logging
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_cors import CORS
 from flask import Flask, jsonify, request
 
@@ -35,162 +36,172 @@ except ImportError:
     print("requests não instalado. Rode: pip install requests")
     sys.exit(1)
 
-
-# Config
+# ============================
+# CONFIG
+# ============================
 HOST = "127.0.0.1"
-PORT = 8000
-POLL_INTERVAL = 3           # segundos entre coletas
-PUSH_URL = None             # se setado, agente fará POST para esse URL com os dados
-AUTO_ELEVATE = True         # tentar pedir privilégio na 1a execução
+PORT = 17820
+POLL_INTERVAL = 3
+PUSH_URL = None
+AUTO_ELEVATE = True
+
+# Thresholds de alerta
+CPU_ALERT_THRESHOLD = 90
+MEM_ALERT_THRESHOLD = 90
+
+# Logging
+logger = logging.getLogger("agent")
+logger.setLevel(logging.INFO)
+fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+ch = logging.StreamHandler()
+ch.setFormatter(fmt)
+logger.addHandler(ch)
+
+# Suprime logs verbose do Flask/Werkzeug
+flask_log = logging.getLogger('werkzeug')
+flask_log.setLevel(logging.ERROR)
 
 # Estado
 latest_metrics = {}
 latest_lock = threading.Lock()
 
-def is_windows():
+# ============================
+# PRIVILEGIOS
+# ============================
+def is_windows() -> bool:
     return platform.system().lower() == "windows"
 
+def is_admin() -> bool:
+    try:
+        if is_windows():
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        else:
+            return os.geteuid() == 0
+    except Exception:
+        return False
+
 def ensure_admin():
-    """Tenta elevar privilégios no Windows (ShellExecute runas) ou chama pkexec/sudo no Linux."""
     if not AUTO_ELEVATE:
         return
     try:
+        if is_admin():
+            return
         if is_windows():
-            # Windows: relança com RunAs se não for admin
-            import ctypes
-            if ctypes.windll.shell32.IsUserAnAdmin():
-                return
-            print("Reiniciando com privilégios administrativos...")
+            logger.info("Solicitando elevação de privilégios (UAC)...")
             params = " ".join([f'"{p}"' for p in sys.argv])
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
             sys.exit(0)
         else:
-            # Linux/macOS
-            if os.geteuid() == 0:
-                return
-            # Tenta pkexec, senão sudo (pode pedir senha)
             if shutil.which("pkexec"):
-                print("Tentando elevar com pkexec...")
+                logger.info("Tentando elevar com pkexec...")
                 os.execvp("pkexec", ["pkexec", sys.executable] + sys.argv)
             else:
-                print("Tentando elevar com sudo (poderá pedir senha)...")
+                logger.info("Tentando elevar com sudo (poderá pedir senha)...")
                 os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
     except Exception as e:
-        print("Elevação falhou ou foi cancelada:", e)
-        # Continua sem admin — muitas coisas ainda funcionam
+        logger.warning(f"Elevação falhou ou foi cancelada: {e}")
 
+# ============================
+# MÉTRICAS
+# ============================
 def get_basic_hw_info():
     info = {}
     try:
         uname = platform.uname()
-        info["system"] = uname.system
-        info["node"] = uname.node
-        info["release"] = uname.release
-        info["version"] = uname.version
-        info["machine"] = uname.machine
-        info["processor"] = uname.processor
+        info.update({
+            "system": uname.system,
+            "node": uname.node,
+            "release": uname.release,
+            "version": uname.version,
+            "machine": uname.machine,
+            "processor": uname.processor
+        })
     except Exception:
         pass
 
-    # Tentativa de obter modelo em Windows via WMI
     if is_windows():
         try:
             import wmi
             c = wmi.WMI()
             cs = c.Win32_ComputerSystem()[0]
-            info["manufacturer"] = cs.Manufacturer
-            info["model"] = cs.Model
+            info.update({"manufacturer": cs.Manufacturer, "model": cs.Model})
+        except ImportError:
+            info.update({"manufacturer": None, "model": None})
+            logger.warning("wmi não instalado. Rode: pip install wmi")
         except Exception:
-            pass
+            info.update({"manufacturer": None, "model": None})
     else:
-        # Linux: tentar /sys/devices/virtual/dmi/id/*
-        try:
-            def read_file(path):
-                if os.path.exists(path):
-                    with open(path, "r", errors="ignore") as f:
-                        return f.read().strip()
-                return None
-            info["manufacturer"] = read_file("/sys/devices/virtual/dmi/id/sys_vendor")
-            info["model"] = read_file("/sys/devices/virtual/dmi/id/product_name")
-        except Exception:
-            pass
+        def read_file(path):
+            if os.path.exists(path):
+                with open(path, "r", errors="ignore") as f:
+                    return f.read().strip()
+            return None
+        info.update({
+            "manufacturer": read_file("/sys/devices/virtual/dmi/id/sys_vendor"),
+            "model": read_file("/sys/devices/virtual/dmi/id/product_name")
+        })
     return info
 
 def collect_metrics():
-    """Coleta um dicionário com as métricas principais."""
     m = {}
     try:
-        m["timestamp"] = datetime.utcnow().isoformat() + "Z"
-        # hardware básico
+        m["timestamp"] = datetime.now(timezone.utc).isoformat()
         m["hw"] = get_basic_hw_info()
 
         # CPU
+        cpu_percents = psutil.cpu_percent(percpu=True)
         m["cpu"] = {
             "physical_cores": psutil.cpu_count(logical=False),
             "total_cores": psutil.cpu_count(logical=True),
-            "usage_pct": psutil.cpu_percent(interval=None)
+            "usage_pct": cpu_percents
         }
-        # Memory
+        cpu_avg = sum(cpu_percents) / len(cpu_percents)
+
+        # Memória
         vm = psutil.virtual_memory()
-        m["memory"] = {
-            "total": vm.total,
-            "available": vm.available,
-            "used": vm.used,
-            "used_pct": vm.percent
-        }
-        # Swap
+        mem_used_pct = vm.percent
+        m["memory"] = {"total": vm.total, "available": vm.available, "used": vm.used, "used_pct": mem_used_pct}
+
         sw = psutil.swap_memory()
         m["swap"] = {"total": sw.total, "used": sw.used, "free": sw.free, "used_pct": sw.percent}
 
-        # Disk
+        # Disco
         disks = []
         for part in psutil.disk_partitions(all=False):
             try:
                 usage = psutil.disk_usage(part.mountpoint)
-                disks.append({
-                    "device": part.device,
-                    "mountpoint": part.mountpoint,
-                    "fstype": part.fstype,
-                    "total": usage.total,
-                    "used": usage.used,
-                    "free": usage.free,
-                    "used_pct": usage.percent
-                })
+                disks.append({"device": part.device, "mountpoint": part.mountpoint,
+                              "fstype": part.fstype, "total": usage.total,
+                              "used": usage.used, "free": usage.free,
+                              "used_pct": usage.percent})
             except Exception:
                 continue
         m["disks"] = disks
 
-        # Network
+        # Rede
         net_io = psutil.net_io_counters(pernic=False)
-        m["network"] = {
-            "bytes_sent": net_io.bytes_sent,
-            "bytes_recv": net_io.bytes_recv,
-            "packets_sent": net_io.packets_sent,
-            "packets_recv": net_io.packets_recv
-        }
+        m["network"] = {"bytes_sent": net_io.bytes_sent, "bytes_recv": net_io.bytes_recv,
+                        "packets_sent": net_io.packets_sent, "packets_recv": net_io.packets_recv}
 
-        # Processes: top 5 by cpu
+        # Processos
         procs = []
         for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "username"]):
             try:
                 procs.append(p.info)
             except Exception:
                 continue
-        procs_sorted = sorted(procs, key=lambda x: x.get("cpu_percent") or 0, reverse=True)[:8]
-        m["top_processes"] = procs_sorted
+        top_procs = sorted(procs, key=lambda x: x.get("cpu_percent") or 0, reverse=True)[:8]
+        m["top_processes"] = top_procs
 
-        # Drivers / kernel modules (informação básica)
+        # Drivers
         drivers = []
         if is_windows():
-            # usar driverquery
             try:
                 out = subprocess.check_output(["driverquery", "/FO", "CSV"], universal_newlines=True, stderr=subprocess.DEVNULL)
-                # devolve número de linhas como resumo, e não parse completo (por performance)
                 drivers = {"summary_lines": out.count("\n")}
             except Exception:
                 drivers = {"error": "driverquery_failed"}
         else:
-            # Linux: lsmod
             try:
                 out = subprocess.check_output(["lsmod"], universal_newlines=True, stderr=subprocess.DEVNULL)
                 drivers = {"summary_lines": out.count("\n")}
@@ -198,7 +209,6 @@ def collect_metrics():
                 drivers = {"error": "lsmod_failed"}
         m["drivers"] = drivers
 
-        # IP / connectivity basic test (dns resolution and ping google)
         try:
             addrs = psutil.net_if_addrs()
             m["interfaces"] = {k: [str(x.address) for x in v if hasattr(x, "address")] for k, v in addrs.items()}
@@ -207,10 +217,21 @@ def collect_metrics():
 
     except Exception as e:
         m["error"] = str(e)
+
+    # Logs de métricas resumidas
+    disk_summary = ", ".join([f"{d['mountpoint']}:{d['used_pct']}%" for d in disks])
+    top_proc_summary = ", ".join([f"{p['name']}({p['cpu_percent']}%)" for p in top_procs])
+    logger.info(f"[Metrics] CPU(avg)={cpu_avg:.1f}% MEM={mem_used_pct:.1f}% DISKS={disk_summary} TOPPROC={top_proc_summary}")
+
+    # Alertas
+    if cpu_avg > CPU_ALERT_THRESHOLD:
+        logger.warning(f"[ALERT] CPU média alta: {cpu_avg:.1f}%")
+    if mem_used_pct > MEM_ALERT_THRESHOLD:
+        logger.warning(f"[ALERT] MEM usada alta: {mem_used_pct:.1f}%")
+
     return m
 
 def background_collector():
-    """Roda em loop coletando métricas e guardando em latest_metrics; opcionalmente faz POST para PUSH_URL."""
     global latest_metrics
     while True:
         m = collect_metrics()
@@ -220,13 +241,14 @@ def background_collector():
             try:
                 requests.post(PUSH_URL, json=m, timeout=5)
             except Exception as e:
-                # falha no envio não para o agente
-                print("Falha ao enviar push:", e)
+                logger.warning(f"Falha ao enviar push: {e}")
         time.sleep(POLL_INTERVAL)
 
-# Flask app que expõe o estado atual
+# ============================
+# FLASK APP
+# ============================
 app = Flask("agent_api")
-CORS(app)  # permite qualquer origem
+CORS(app)
 
 @app.route("/metrics", methods=["GET"])
 def get_metrics():
@@ -235,42 +257,44 @@ def get_metrics():
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "ts": datetime.utcnow().isoformat() + "Z"})
+    return jsonify({"status": "ok", "ts": datetime.now(timezone.utc).isoformat()})
 
 @app.route("/config", methods=["POST"])
 def set_config():
-    """
-    Endpoint simples para ajustar config em runtime.
-    Ex.: POST {"poll_interval":5, "push_url":"http://..."}
-    """
     global POLL_INTERVAL, PUSH_URL
     data = request.json or {}
     if "poll_interval" in data:
         try:
             val = int(data["poll_interval"])
             POLL_INTERVAL = max(1, val)
+            logger.info(f"Poll interval alterado para {POLL_INTERVAL}s")
         except:
             pass
     if "push_url" in data:
         PUSH_URL = data["push_url"]
+        logger.info(f"PUSH_URL alterado para {PUSH_URL}")
     return jsonify({"ok": True, "poll_interval": POLL_INTERVAL, "push_url": PUSH_URL})
 
 def start_flask_app():
-    # roda flask numa thread separada
+    logger.info(f"Flask HTTP rodando em http://{HOST}:{PORT}/")
     app.run(host=HOST, port=PORT, threaded=True)
 
+# ============================
+# MAIN
+# ============================
 def main():
-    # opcional: elevar privilégios se necessário
+    logger.info("Iniciando agent...")
     try:
         ensure_admin()
+        logger.info("Elevação de privilégios concluída.")
     except Exception:
-        pass
+        logger.warning("Elevação de privilégios falhou ou cancelada. Continuando com privilégios normais.")
 
-    # start collector thread
+    logger.info("Iniciando coletor de métricas em background...")
     t = threading.Thread(target=background_collector, daemon=True)
     t.start()
+    logger.info(f"Coletor iniciado. Poll interval: {POLL_INTERVAL} segundos.")
 
-    # start flask (blocking)
     start_flask_app()
 
 if __name__ == "__main__":
