@@ -1,41 +1,36 @@
-import { Flex, Spinner, Text, Center } from "@chakra-ui/react";
+import React from "react";
 import Sidebar from "./components/Sidebar/Sidebar";
 import Dashboard from "./components/Dashboard/Dashboard";
-import { useMetrics } from "./hooks/useMetrics"; // ✅ importa o hook
-import type { Metric } from "./hooks/useMetrics"; // ✅ importa o tipo (só pra tipagem)
+import { useMetrics } from "./hooks/useMetrics";
+import type { Metric } from "./hooks/useMetrics";
+import styles from "./App.module.css";
 
 export default function App() {
   const { metrics, loading, error } = useMetrics(3000);
 
   if (loading) {
     return (
-      <Center h="100vh" bg="gray.900" flexDir="column">
-        <Spinner size="xl" color="blue.400" />
-        <Text mt={4} color="gray.300">
-          Carregando métricas...
-        </Text>
-      </Center>
+      <div className={styles.loadingContainer}>
+        <div className={styles.spinner}></div>
+        <p>Carregando métricas...</p>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <Center h="100vh" bg="gray.900" flexDir="column">
-        <Text color="red.400" fontWeight="bold">
-          Erro ao carregar métricas
-        </Text>
-        <Text color="gray.400" fontSize="sm">
-          {error}
-        </Text>
-      </Center>
+      <div className={styles.errorContainer}>
+        <p className={styles.errorText}>Erro ao carregar métricas</p>
+        <p className={styles.errorDetails}>{error}</p>
+      </div>
     );
   }
 
   return (
-    <Flex h="100vh" bg="gray.900" color="white">
-      <Sidebar />
-      {/* ✅ agora Dashboard recebe as métricas corretamente */}
-      <Dashboard metrics={metrics as Metric} />
-    </Flex>
-  );
+  <div className={styles.app}>
+    <Sidebar />
+    <Dashboard metrics={metrics as Metric} />
+  </div>
+);
+
 }

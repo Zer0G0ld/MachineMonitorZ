@@ -1,34 +1,17 @@
-import { VStack, Text, Box } from "@chakra-ui/react";
+import styles from "./Sidebar.module.css";
 
 const menuItems = ["Dashboard", "Processos", "Drivers", "Configurações"];
 
 export default function Sidebar() {
   return (
-    <VStack
-      bg="gray.900"
-      w="64" // largura fixa
-      minH="100vh"
-      p={6}
-      gap={4} // substitui spacing
-      align="stretch"
-      shadow="md"
-    >
-      <Text fontSize="2xl" fontWeight="bold" mb={6} color="blue.300">
-        MachineMonitorZ
-      </Text>
+    <div className={styles.sidebar}>
+      <div className={styles.sidebarTitle}>MachineMonitorZ</div>
 
       {menuItems.map((item) => (
-        <Box
-          key={item}
-          p={3}
-          borderRadius="md"
-          cursor="pointer"
-          _hover={{ bg: "gray.700", color: "blue.300" }}
-          fontWeight="medium"
-        >
+        <div key={item} className={styles.menuItem}>
           {item}
-        </Box>
+        </div>
       ))}
-    </VStack>
+    </div>
   );
 }

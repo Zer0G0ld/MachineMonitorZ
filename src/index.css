@@ -1,3 +1,4 @@
+/* index.css - estilos globais */
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -13,28 +14,32 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden; /* evita scroll global */
+}
+
+
+/* Links */
 a {
   font-weight: 500;
   color: #646cff;
-  text-decoration: inherit;
+  text-decoration: none;
 }
 a:hover {
   color: #535bf2;
 }
 
-body {
+/* Títulos */
+h1, h2, h3, h4, h5, h6 {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  font-weight: 600;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
+/* Botões básicos */
 button {
   border-radius: 8px;
   border: 1px solid transparent;
@@ -43,6 +48,7 @@ button {
   font-weight: 500;
   font-family: inherit;
   background-color: #1a1a1a;
+  color: inherit;
   cursor: pointer;
   transition: border-color 0.25s;
 }
@@ -54,10 +60,11 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Light mode */
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    --bg-color: #ffffff;
+    --text-color: #213547;
   }
   a:hover {
     color: #747bff;

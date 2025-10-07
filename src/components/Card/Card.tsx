@@ -1,29 +1,22 @@
-import { Box, Text, Flex } from "@chakra-ui/react";
+import React from "react";
+import styles from "./Card.module.css";
 
 interface Props {
   title: string;
   value: string;
-  color?: string;
+  color?: string; // cor dinâmica
 }
 
-export default function MetricCard({ title, value, color = "blue.400" }: Props) {
+export default function MetricCard({ title, value, color = "#3b82f6" }: Props) {
   return (
-    <Box
-      bg="gray.800"
-      borderRadius="md"
-      shadow="md"
-      p={4}
-      borderLeft={`4px solid ${color}`}
-      _hover={{ shadow: "lg", transform: "translateY(-2px)", transition: "0.2s" }}
+    <div
+      className={styles.card}
+      style={{ "--border-color": color, "--text-color": color } as React.CSSProperties}
     >
-      <Flex direction="column">
-        <Text fontSize="md" fontWeight="bold" color="gray.300">
-          {title}
-        </Text>
-        <Text fontSize="3xl" fontWeight="extrabold" mt={2} color={color}>
-          {value}
-        </Text>
-      </Flex>
-    </Box>
+      <div className={styles.cardContent}>
+        <span className={styles.cardTitle}>{title}</span>
+        <span className={styles.cardValue}>{value}</span>
+      </div>
+    </div>
   );
 }

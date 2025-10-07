@@ -1,0 +1,50 @@
+/* Layout geral */
+.app {
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: #121212;
+  color: #ffffffde;
+  font-family: sans-serif;
+}
+
+/* Estados de carregamento e erro */
+.loadingContainer,
+.errorContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background-color: #121212;
+}
+
+.spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 0.4rem solid #555;
+  border-top: 0.4rem solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.errorText {
+  color: #f87171;
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.errorDetails {
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
