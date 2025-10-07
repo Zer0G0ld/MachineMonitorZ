@@ -1,4 +1,4 @@
-import MetricCard from "../Card/Card";
+import MetricCard from "../../components/Card/Card";
 import type { Metric } from "../../hooks/useMetrics";
 import styles from "./Dashboard.module.css";
 

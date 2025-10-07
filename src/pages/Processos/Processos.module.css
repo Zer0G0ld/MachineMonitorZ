@@ -1,0 +1,60 @@
+.container {
+  flex: 1;
+  padding: 2rem;
+  background-color: #1a1a1a;
+  color: #ffffffde;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.title {
+  font-size: 1.75rem;
+  color: #3b82f6;
+  margin-bottom: 1rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background-color: #111;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #374151;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem;
+  border-bottom: 1px solid #374151;
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.name {
+  color: #d1d5db;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cpu {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.message {
+  padding: 2rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.messageError {
+  padding: 2rem;
+  color: #f87171;
+  font-weight: bold;
+}
